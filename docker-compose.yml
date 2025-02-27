@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  pg-explorer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  # Development mode configuration
+  dev:
+    build: ./server
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+      - ./client/build:/app/client/build
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
