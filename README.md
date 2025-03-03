@@ -5,13 +5,14 @@ A modern web-based PostgreSQL client application for running queries and explori
 ## Features
 
 - Connect to any PostgreSQL database
-- Execute SQL queries and view results in a tabular format
+- Execute SQL queries with syntax highlighting and auto-completion
+- Intelligent SQL editor with context-aware suggestions
 - Browse database schema and tables
 - Export query results to CSV
 - Copy results to clipboard
 - Switchable dark/light mode UI with persistent user preference
 - AWS IAM authentication support for RDS PostgreSQL databases
-- Modern Material Design
+- Modern Material Design with CodeMirror editor
 
 ## Project Structure
 
@@ -113,6 +114,20 @@ The application supports both dark and light themes:
 - Click the sun/moon icon in the top-right corner to switch themes
 - Theme preference is saved in the browser's localStorage
 - Your chosen theme will persist between browser sessions and page refreshes
+- SQL editor syntax highlighting automatically adjusts to match the selected theme
+
+### SQL Editor Features
+
+The SQL query editor includes advanced functionality to improve productivity:
+
+- Syntax highlighting for SQL keywords, operators, and functions
+- Auto-completion for SQL keywords and commands
+- Context-aware suggestions for table columns
+- Auto-pairing of brackets and quotes
+- Code folding for large queries
+- Line numbers and active line highlighting
+- Execute queries with Ctrl+Enter keyboard shortcut
+- Error messages displayed inline for quick debugging
 
 ## Connecting to PostgreSQL
 
