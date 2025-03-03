@@ -5,8 +5,9 @@ A modern web-based PostgreSQL client application for running queries and explori
 ## Features
 
 - Connect to any PostgreSQL database
-- Execute SQL queries with syntax highlighting and auto-completion
-- Intelligent SQL editor with context-aware suggestions
+- Execute SQL queries with syntax highlighting and database-aware auto-completion
+- Intelligent SQL editor with schema-aware suggestions for tables and columns
+- Context-sensitive SQL autocompletion adapts to what you're typing
 - Browse database schema and tables
 - Export query results to CSV
 - Copy results to clipboard
@@ -121,13 +122,17 @@ The application supports both dark and light themes:
 The SQL query editor includes advanced functionality to improve productivity:
 
 - Syntax highlighting for SQL keywords, operators, and functions
-- Auto-completion for SQL keywords and commands
-- Context-aware suggestions for table columns
+- Database-aware auto-completion for SQL keywords, tables, schemas, and columns 
+- Smart context detection that provides different suggestions based on cursor position:
+  - After "FROM" or "JOIN": suggests schema and table names
+  - After schema.table.: suggests columns from that specific table
+  - In SELECT clause: suggests columns from tables in the query
 - Auto-pairing of brackets and quotes
 - Code folding for large queries
 - Line numbers and active line highlighting
 - Execute queries with Ctrl+Enter keyboard shortcut
 - Error messages displayed inline for quick debugging
+- Visual indicator when database schema is loaded for autocompletion
 
 ## Connecting to PostgreSQL
 

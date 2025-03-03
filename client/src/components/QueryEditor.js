@@ -5,10 +5,13 @@ import {
   Alert,
   Collapse,
   IconButton,
-  useTheme
+  useTheme,
+  Tooltip,
+  CircularProgress
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CloseIcon from '@mui/icons-material/Close';
+import SchemaIcon from '@mui/icons-material/AccountTree';
 import axios from 'axios';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
@@ -26,12 +29,43 @@ const sqlKeywords = [
   'ASC', 'DESC', 'WITH', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'OVER', 'PARTITION BY'
 ];
 
+// SQL functions for autocomplete
+const sqlFunctions = [
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF', 'CURRENT_DATE',
+  'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'EXTRACT', 'TO_CHAR', 'TO_DATE',
+  'LENGTH', 'LOWER', 'UPPER', 'SUBSTRING', 'TRIM', 'CONCAT', 'ROUND', 'TRUNC',
+  'CAST', 'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'NTILE', 'LAG', 'LEAD', 'FIRST_VALUE',
+  'LAST_VALUE', 'PERCENTILE_CONT', 'PERCENTILE_DISC', 'ARRAY_AGG', 'STRING_AGG',
+  'JSON_AGG', 'JSONB_AGG', 'JSONB_OBJECT_AGG', 'REGEXP_MATCH', 'REGEXP_REPLACE'
+];
+
 const QueryEditor = ({ onResults, selectedTable }) => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tableColumns, setTableColumns] = useState([]);
+  const [loadingSchema, setLoadingSchema] = useState(false);
+  const [schemaInfo, setSchemaInfo] = useState(null);
   const theme = useTheme();
+
+  // Fetch database schema information when connected
+  useEffect(() => {
+    const fetchSchemaInfo = async () => {
+      setLoadingSchema(true);
+      try {
+        const response = await axios.get('/api/schema-info');
+        if (response.data.success) {
+          setSchemaInfo(response.data.schemaInfo);
+        }
+      } catch (err) {
+        console.error('Error fetching schema info:', err);
+      } finally {
+        setLoadingSchema(false);
+      }
+    };
+
+    fetchSchemaInfo();
+  }, []);
 
   // When a table is selected, generate a SELECT query and fetch its columns
   useEffect(() => {
@@ -56,26 +90,180 @@ const QueryEditor = ({ onResults, selectedTable }) => {
     }
   }, [selectedTable]);
 
-  // SQL completion function for CodeMirror
+  // Enhanced SQL completion function for CodeMirror
   const myCompletions = useCallback(context => {
-    let word = context.matchBefore(/\w*/);
+    // Get the current text and position
+    const { state, pos } = context;
+    const line = state.doc.lineAt(pos);
+    const lineText = line.text.substring(0, pos - line.from);
+    
+    // Try to match different patterns based on context
+    
+    // Case 1: After 'FROM' or 'JOIN' - suggest schema or table names
+    const tableContext = lineText.match(/\b(FROM|JOIN)\s+([^,\s]*)$/i);
+    if (tableContext && schemaInfo) {
+      const prefix = tableContext[2] || '';
+      const dotIndex = prefix.indexOf('.');
+      
+      // If there's a dot, suggest specific schema tables
+      if (dotIndex !== -1) {
+        const schema = prefix.substring(0, dotIndex);
+        const tablePrefix = prefix.substring(dotIndex + 1);
+        
+        // Find tables in the specified schema
+        const matchingTables = Object.keys(schemaInfo.tables)
+          .filter(key => key.startsWith(`${schema}.`))
+          .map(key => {
+            const table = schemaInfo.tables[key].name;
+            return { 
+              label: table, 
+              type: 'class',
+              info: `Table in ${schema} schema`,
+              apply: `"${schema}"."${table}"`
+            };
+          })
+          .filter(item => item.label.toLowerCase().startsWith(tablePrefix.toLowerCase()));
+        
+        return {
+          from: pos - tablePrefix.length,
+          options: matchingTables,
+          span: /^[a-zA-Z0-9_]+$/
+        };
+      }
+      
+      // If no dot, suggest schemas and full table names
+      const options = [
+        // Schema suggestions
+        ...schemaInfo.schemas.map(schema => ({
+          label: schema,
+          type: 'namespace',
+          info: 'Schema',
+          apply: `${schema}.`,
+          boost: 10
+        })),
+        // Full table name suggestions
+        ...Object.keys(schemaInfo.tables).map(key => {
+          const parts = key.split('.');
+          return {
+            label: `${parts[0]}.${parts[1]}`,
+            type: 'class',
+            info: `Table in ${parts[0]} schema`,
+            apply: `"${parts[0]}"."${parts[1]}"`
+          };
+        })
+      ].filter(item => 
+        item.label.toLowerCase().startsWith(prefix.toLowerCase()) ||
+        item.label.toLowerCase().includes(prefix.toLowerCase())
+      );
+      
+      return {
+        from: pos - prefix.length,
+        options,
+        span: /^[a-zA-Z0-9_.]+$/
+      };
+    }
+    
+    // Case 2: After dot in a qualified name - suggest columns
+    const columnContext = lineText.match(/([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]*)$/);
+    if (columnContext && schemaInfo) {
+      const schema = columnContext[1];
+      const table = columnContext[2];
+      const columnPrefix = columnContext[3] || '';
+      const schemaTable = `${schema}.${table}`;
+      
+      // Find columns for the specified table
+      if (schemaInfo.columns[schemaTable]) {
+        const matchingColumns = schemaInfo.columns[schemaTable]
+          .map(col => ({
+            label: col.name,
+            type: 'property',
+            info: `${col.type}`,
+            apply: `"${col.name}"`
+          }))
+          .filter(item => item.label.toLowerCase().startsWith(columnPrefix.toLowerCase()));
+        
+        return {
+          from: pos - columnPrefix.length,
+          options: matchingColumns,
+          span: /^[a-zA-Z0-9_]+$/
+        };
+      }
+    }
+    
+    // Case 3: Simple column name or general completion
+    const word = context.matchBefore(/\w*/);
     if (!word || word.from === word.to) {
       return null;
     }
-
-    // Create completions array from keywords and table columns
-    const completions = [
-      ...sqlKeywords.map(keyword => ({ label: keyword, type: 'keyword' })),
-      ...tableColumns.map(column => ({ label: column, type: 'variable' }))
+    
+    // Build the completions array
+    let completions = [
+      // SQL keywords
+      ...sqlKeywords.map(keyword => ({ 
+        label: keyword, 
+        type: 'keyword',
+        boost: 5
+      })),
+      // SQL functions
+      ...sqlFunctions.map(func => ({ 
+        label: func, 
+        type: 'function',
+        boost: 3
+      }))
     ];
-
+    
+    // Add schema-aware completions if available
+    if (schemaInfo) {
+      // Add schemas
+      completions.push(
+        ...schemaInfo.schemas.map(schema => ({
+          label: schema,
+          type: 'namespace',
+          info: 'Schema'
+        }))
+      );
+      
+      // Add table names
+      completions.push(
+        ...Object.values(schemaInfo.tables).map(table => ({
+          label: table.name,
+          type: 'class',
+          info: `Table in ${table.schema} schema`
+        }))
+      );
+      
+      // Add columns from the currently selected table
+      if (selectedTable) {
+        const schemaTable = `${selectedTable.schema}.${selectedTable.table}`;
+        if (schemaInfo.columns[schemaTable]) {
+          completions.push(
+            ...schemaInfo.columns[schemaTable].map(col => ({
+              label: col.name,
+              type: 'property',
+              info: `${col.type} - ${selectedTable.table}`
+            }))
+          );
+        }
+      }
+    }
+    
+    // Also add columns from the current table
+    completions.push(
+      ...tableColumns.map(column => ({ 
+        label: column, 
+        type: 'variable',
+        boost: 4
+      }))
+    );
+    
     return {
       from: word.from,
       options: completions.filter(item => 
         item.label.toLowerCase().startsWith(word.text.toLowerCase())
-      )
+      ),
+      span: /^[a-zA-Z0-9_]+$/
     };
-  }, [tableColumns]);
+  }, [tableColumns, schemaInfo, selectedTable]);
 
   const handleExecuteQuery = async () => {
     if (!query.trim()) return;
@@ -124,16 +312,28 @@ const QueryEditor = ({ onResults, selectedTable }) => {
           mb: 2 
         }}
       >
-        <Button 
-          variant="contained" 
-          color="primary" 
-          startIcon={<PlayArrowIcon />}
-          onClick={handleExecuteQuery}
-          disabled={loading || !query.trim()}
-          size="small"
-        >
-          {loading ? 'Executing...' : 'Execute Query'}
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<PlayArrowIcon />}
+            onClick={handleExecuteQuery}
+            disabled={loading || !query.trim()}
+            size="small"
+          >
+            {loading ? 'Executing...' : 'Execute Query'}
+          </Button>
+          
+          <Tooltip title="Database schema loaded for autocompletion">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <SchemaIcon 
+                color={schemaInfo ? 'success' : 'disabled'} 
+                fontSize="small" 
+              />
+              {loadingSchema && <CircularProgress size={16} />}
+            </Box>
+          </Tooltip>
+        </Box>
         <Box sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
           Press Ctrl+Enter to run query
         </Box>
@@ -165,7 +365,7 @@ const QueryEditor = ({ onResults, selectedTable }) => {
           onChange={(value) => setQuery(value)}
           extensions={[
             sql(), 
-            autocompletion({ override: [myCompletions] })
+            autocompletion({ override: [myCompletions], maxRenderedOptions: 15 })
           ]}
           theme={editorTheme}
           basicSetup={{

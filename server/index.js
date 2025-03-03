@@ -94,6 +94,89 @@ app.post('/api/connect', async (req, res) => {
   }
 });
 
+// Get database schema information for autocompletion
+app.get('/api/schema-info', async (req, res) => {
+  try {
+    if (!pool) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Not connected to database' 
+      });
+    }
+
+    // Query to get all schemas, tables, and columns
+    const schemaQuery = `
+      SELECT 
+        table_schema,
+        table_name,
+        column_name,
+        data_type
+      FROM 
+        information_schema.columns
+      WHERE 
+        table_schema NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY 
+        table_schema, 
+        table_name, 
+        ordinal_position;
+    `;
+
+    const result = await pool.query(schemaQuery);
+    
+    // Process the results into a structured format for autocompletion
+    const schemaInfo = {
+      schemas: [],
+      tables: {},    // Key: schema.table, Value: table info
+      columns: {},   // Key: schema.table, Value: array of column names
+      fullNames: []  // All fully qualified names like "schema"."table"."column"
+    };
+    
+    // Process the results
+    result.rows.forEach(row => {
+      const { table_schema, table_name, column_name, data_type } = row;
+      const schemaTable = `${table_schema}.${table_name}`;
+      const fullyQualifiedName = `"${table_schema}"."${table_name}"."${column_name}"`;
+      
+      // Add schema if not already in the list
+      if (!schemaInfo.schemas.includes(table_schema)) {
+        schemaInfo.schemas.push(table_schema);
+      }
+      
+      // Add table if not already in the object
+      if (!schemaInfo.tables[schemaTable]) {
+        schemaInfo.tables[schemaTable] = {
+          schema: table_schema,
+          name: table_name
+        };
+      }
+      
+      // Add column to the table's column list
+      if (!schemaInfo.columns[schemaTable]) {
+        schemaInfo.columns[schemaTable] = [];
+      }
+      schemaInfo.columns[schemaTable].push({
+        name: column_name,
+        type: data_type
+      });
+      
+      // Add fully qualified name
+      schemaInfo.fullNames.push(fullyQualifiedName);
+    });
+    
+    res.json({ 
+      success: true, 
+      schemaInfo 
+    });
+    
+  } catch (error) {
+    console.error('Error fetching schema info:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
 app.post('/api/query', async (req, res) => {
   try {
     const { query } = req.body;
